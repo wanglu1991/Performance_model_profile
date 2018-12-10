@@ -732,6 +732,8 @@ public:
         cache_op = CACHE_UNDEFINED;
         latency = 1;
         initiation_interval = 1;
+        static_latency=1;
+
         for( unsigned i=0; i < MAX_REG_OPERANDS; i++ ) {
             arch_reg.src[i] = -1;
             arch_reg.dst[i] = -1;
@@ -785,6 +787,7 @@ public:
     //int arch_reg[MAX_REG_OPERANDS]; // register number for bank conflict evaluation
     unsigned latency; // operation latency 
     unsigned initiation_interval;
+    unsigned static_latency;
 
     unsigned data_size; // what is the size of the word being operated on?
     memory_space_t space;

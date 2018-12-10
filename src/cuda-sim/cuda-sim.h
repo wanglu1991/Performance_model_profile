@@ -32,13 +32,20 @@
 #include"../gpgpu-sim/shader.h"
 #include <stdlib.h>
 #include <map>
+#include <set>
 #include <string>
 #include"ptx_sim.h"
 
 class memory_space;
 class function_info;
 class symbol_table;
-
+extern std::map<const symbol*, int> available_cycle;
+extern std::map<const symbol*, unsigned> pc_dep;
+extern long interval_issue_cycle;
+extern std::set <unsigned> dependence_pc_list;
+extern int CTA_number;
+extern int kernel_number;
+extern std::vector<long> issue_cycle;
 extern const char *g_gpgpusim_version_string;
 extern int g_ptx_sim_mode;
 extern int g_debug_execution;
@@ -46,7 +53,7 @@ extern int g_debug_thread_uid;
 extern void ** g_inst_classification_stat;
 extern void ** g_inst_op_classification_stat;
 extern int g_ptx_kernel_count; // used for classification stat collection purposes 
-
+extern std::vector<long > instruction_count;
 void ptx_opcocde_latency_options (option_parser_t opp);
 extern class kernel_info_t *gpgpu_opencl_ptx_sim_init_grid(class function_info *entry,
                                             gpgpu_ptx_sim_arg_list_t args, 

@@ -35,7 +35,8 @@
 #include "gpgpu-sim/gpu-sim.h"
 #include "option_parser.h"
 #include <algorithm>
-
+#include <string>
+#include <sstream>
 unsigned mem_access_t::sm_next_access_uid = 0;   
 unsigned warp_inst_t::sm_next_uid = 0;
 
@@ -315,6 +316,7 @@ void warp_inst_t::generate_mem_accesses()
 
     case global_space: case local_space: case param_space_local:
         if( m_config->gpgpu_coalesce_arch == 13 ) {
+
            if(isatomic())
                memory_coalescing_arch_13_atomic(is_write, access_type);
            else
@@ -364,6 +366,8 @@ void warp_inst_t::memory_coalescing_arch_13( bool is_write, mem_access_type acce
     }
     unsigned subwarp_size = m_config->warp_size / warp_parts;
 
+   // int warp_access_numbers=0;
+
     for( unsigned subwarp=0; subwarp <  warp_parts; subwarp++ ) {
         std::map<new_addr_type,transaction_info> subwarp_transactions;
 
@@ -406,14 +410,20 @@ void warp_inst_t::memory_coalescing_arch_13( bool is_write, mem_access_type acce
 
         // step 2: reduce each transaction size, if possible
         std::map< new_addr_type, transaction_info >::iterator t;
+
+        //for uncoalesced memory access, the number of transaction equals to the number of memory access
         for( t=subwarp_transactions.begin(); t !=subwarp_transactions.end(); t++ ) {
             new_addr_type addr = t->first;
+
             const transaction_info &info = t->second;
+
 
             memory_coalescing_arch_13_reduce_and_send(is_write, access_type, info, addr, segment_size);
 
         }
     }
+
+
 }
 
 void warp_inst_t::memory_coalescing_arch_13_atomic( bool is_write, mem_access_type access_type )
@@ -785,7 +795,10 @@ void simt_stack::update( simt_mask_t &thread_done, addr_vector_t &next_pc, addre
 }
 
 void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpId)
-{
+{   issue_cycle[warpId]++;
+	interval_issue_cycle=issue_cycle[warpId];
+    dependence_pc_list.clear();
+
     for ( unsigned t=0; t < m_warp_size; t++ ) {
         if( inst.active(t) ) {
             if(warpId==(unsigned (-1)))
@@ -797,6 +810,93 @@ void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpId)
             checkExecutionStatusAndUpdate(inst,t,tid);
         }
     } 
+    if(inst.active_count()!=0)
+    {	instruction_count[warpId]++;
+        if(interval_issue_cycle>(issue_cycle[warpId]))
+        	issue_cycle[warpId]=interval_issue_cycle+1;
+
+        //print issue info (interval profile of each warp, assume AMAT=150) :
+       if((m_kernel->num_blocks()>120))
+       {
+    	std::stringstream uid;
+    	uid << m_kernel->get_uid();
+
+        std::string name="interval_info_"+uid.str()+".txt";
+        FILE * interval=fopen(name.c_str(),"a");
+        //FILE * interval =fopen("interval_info.txt","a");
+        if (interval!=NULL)
+        {
+        	fprintf(interval,"%d,%lld,%ld,",(CTA_number-1)*m_warp_count+warpId,inst.pc,issue_cycle[warpId]);
+
+
+        	if(!dependence_pc_list.empty())
+            {
+        	for (std::set<unsigned>::iterator it=dependence_pc_list.begin(); it!=dependence_pc_list.end(); ++it)
+            	fprintf(interval,"%d,",(*it));
+            }
+            fprintf(interval,"%d\n",inst.static_latency);
+
+
+        }
+        fclose(interval);
+
+
+
+
+
+        //print per-warp memory access info
+
+
+        std::string mem_access="memory_access_"+uid.str()+".txt";
+         FILE * f=fopen(mem_access.c_str(),"a");
+
+        if(inst.is_load()||inst.is_store())
+        {if(inst.space.is_global())
+        	{
+         std::vector<long long > block_addr_list;
+        if(f!=NULL)
+        {fprintf(f,"%d,",(CTA_number-1)*m_warp_count+warpId);
+         fprintf(f,"%lld,",inst.pc);
+         if(inst.is_load())
+          fprintf(f,"R,");
+         else
+          fprintf(f,"W,");
+        for(unsigned t=0; t<m_warp_size;t++)
+        {   if(inst.active(t))
+        	{long long block_addr=inst.get_addr(t)/128;
+        	 if(!block_addr_list.empty())
+              {   bool same=false;
+        		 for(int i=0;i<block_addr_list.size();i++)
+        		 {
+        			 if(block_addr_list[i]==block_addr)
+        			 { same=true;
+        			   break;
+        			 }
+        		 }
+        		 if(same==false)
+        			 block_addr_list.push_back(block_addr);
+
+        	 }
+        	else
+            block_addr_list.push_back(block_addr);
+
+
+        	}
+        }
+        for(int i=0;i<block_addr_list.size();i++)
+        {  fprintf(f,"%lld,",block_addr_list[i]);
+
+        }
+         fprintf(f,"\n");
+
+       }}}
+        fclose(f);
+
+
+
+    }
+   }
+
 }
   
 bool  core_t::ptx_thread_done( unsigned hw_thread_id ) const  

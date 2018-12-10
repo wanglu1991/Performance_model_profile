@@ -35,6 +35,7 @@
 #include <math.h>
 #include <fenv.h>
 #include "cuda-math.h"
+#include "cuda-sim.h"
 #include "../abstract_hardware_model.h"
 #include "ptx_loader.h"
 #include "cuda_device_printf.h"
@@ -95,15 +96,36 @@ ptx_reg_t ptx_thread_info::get_reg( const symbol *reg )
    return regs_iter->second;
 }
 
+
+//baseline
 ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_info dstInfo, unsigned opType, ptx_thread_info *thread, int derefFlag )
 {
    ptx_reg_t result, tmp;
+
+   //if operand is available, get_operand
 
 
    if(op.get_double_operand_type() == 0) {
       if(((opType != BB128_TYPE) && (opType != BB64_TYPE) && (opType != FF64_TYPE)) || (op.get_addr_space() != undefined_space)) {
          if ( op.is_reg() ) {
             result = get_reg( op.get_symbol() );
+            if(available_cycle.find(op.get_symbol())!=available_cycle.end())
+            	{int available_time=available_cycle.find(op.get_symbol())->second;
+                 if(available_time>interval_issue_cycle)
+
+                	 {interval_issue_cycle=available_time;
+                	// thread->print_insn(thread->m_PC,stdout);
+                	 //printf("pc:%u, available_time,%d\n",thread->m_PC,interval_issue_cycle);
+                	 }
+
+            	}
+            if(pc_dep.find(op.get_symbol())!=pc_dep.end())
+                       	{unsigned pc=pc_dep.find(op.get_symbol())->second;
+                       	  dependence_pc_list.insert(pc);
+
+                       	}
+
+
          } else if ( op.is_builtin()) {
             result.u32 = get_builtin( op.get_int(), op.get_addr_offset() );
          } else  if(op.is_immediate_address()){
@@ -117,6 +139,26 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
             if ( info.is_reg() ) {
                const symbol *name = op.get_symbol();
                result.u64 = get_reg(name).u64 + op.get_addr_offset(); 
+             //  result.available_time=get_reg(name).available_time;
+
+               if(available_cycle.find(op.get_symbol())!=available_cycle.end())
+                           	{int available_time=available_cycle.find(op.get_symbol())->second;
+                                if(available_time>interval_issue_cycle)
+
+                               	 {interval_issue_cycle=available_time;
+                               	 //thread->print_insn(thread->m_PC,stdout);
+                               	// printf("pc:%u, available_time,%d\n",thread->m_PC,interval_issue_cycle);
+                               	 }
+
+                           	}
+               if(pc_dep.find(op.get_symbol())!=pc_dep.end())
+                                     	{unsigned pc=pc_dep.find(op.get_symbol())->second;
+                                     	  dependence_pc_list.insert(pc);
+
+                                     	}
+
+
+
             } else if ( info.is_param_kernel() ) {
                result.u64 = sym->get_address() + op.get_addr_offset();
             } else if ( info.is_param_local() ) {
@@ -164,15 +206,68 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
           result.u128.low = get_reg( op.vec_symbol(1) ).u32;
           result.u128.high = get_reg( op.vec_symbol(2) ).u32;
           result.u128.highest = get_reg( op.vec_symbol(3) ).u32;
+         for(int i=0;i<4;i++)
+          { if(available_cycle.find(op.vec_symbol(i))!=available_cycle.end())
+         	{int available_time=available_cycle.find(op.vec_symbol(i))->second;
+              if(available_time>interval_issue_cycle)
+
+             	 {interval_issue_cycle=available_time;
+             	// thread->print_insn(thread->m_PC,stdout);
+             	// printf("pc:%u, available_time,%d,register_name:%s\n",thread->m_PC,interval_issue_cycle,op.vec_symbol(i)->name());
+             	 }
+
+         	}
+          if(pc_dep.find(op.vec_symbol(i))!=pc_dep.end())
+           {unsigned pc=pc_dep.find(op.get_symbol())->second;
+            dependence_pc_list.insert(pc);
+           }
+        }
+
       } else {
           // bb64 or ff64
           result.bits.ls = get_reg( op.vec_symbol(0) ).u32;
           result.bits.ms = get_reg( op.vec_symbol(1) ).u32;
+         for(int i=0;i<2;i++)
+                  { if(available_cycle.find(op.vec_symbol(i))!=available_cycle.end())
+                 	{int available_time=available_cycle.find(op.vec_symbol(i))->second;
+                      if(available_time>interval_issue_cycle)
+
+                     	 {interval_issue_cycle=available_time;
+                     	 //thread->print_insn(thread->m_PC,stdout);
+                     	// printf("pc:%u, available_time,%d\n",thread->m_PC,interval_issue_cycle);
+                     	 }
+
+                 	}
+                  if(pc_dep.find(op.vec_symbol(i))!=pc_dep.end())
+                   {long pc=pc_dep.find(op.get_symbol())->second;
+                    dependence_pc_list.insert(pc);
+                   }
+
+                  }
+
       }
    } else if (op.get_double_operand_type() == 1) {
       ptx_reg_t firstHalf, secondHalf;
       firstHalf.u64 = get_reg( op.vec_symbol(0) ).u64;
       secondHalf.u64 = get_reg( op.vec_symbol(1) ).u64;
+      for(int i=0;i<2;i++)
+              { if(available_cycle.find(op.vec_symbol(i))!=available_cycle.end())
+             	{int available_time=available_cycle.find(op.vec_symbol(i))->second;
+                  if(available_time>interval_issue_cycle)
+
+                 	 {interval_issue_cycle=available_time;
+                 	// thread->print_insn(thread->m_PC,stdout);
+                 	// printf("pc:%u, available_time,%d\n",thread->m_PC,interval_issue_cycle);
+                 	 }
+
+             	}
+              if(pc_dep.find(op.vec_symbol(i))!=pc_dep.end())
+                        {unsigned pc=pc_dep.find(op.get_symbol())->second;
+                         dependence_pc_list.insert(pc);
+                        }
+
+
+              }
       if(op.get_operand_lohi() == 1)
            secondHalf.u64 = secondHalf.u64 & 0xFFFF;
       else if(op.get_operand_lohi() == 2)
@@ -184,6 +279,23 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
       ptx_reg_t firstHalf, secondHalf;
       firstHalf.u64 = get_reg(op.vec_symbol(0)).u64;
       secondHalf.u64 = get_reg(op.vec_symbol(1)).u64;
+      for(int i=0;i<2;i++)
+              { if(available_cycle.find(op.vec_symbol(i))!=available_cycle.end())
+             	{int available_time=available_cycle.find(op.vec_symbol(i))->second;
+                  if(available_time>interval_issue_cycle)
+
+                 	 {interval_issue_cycle=available_time;
+                 	// thread->print_insn(thread->m_PC,stdout);
+                 	// printf("pc:%u, available_time,%d,register_name:%s\n",thread->m_PC,interval_issue_cycle,op.vec_symbol(i)->name());
+                 	 }
+
+             	}
+              if(pc_dep.find(op.vec_symbol(i))!=pc_dep.end())
+                        {unsigned pc=pc_dep.find(op.get_symbol())->second;
+                         dependence_pc_list.insert(pc);
+                        }
+
+              }
       if(op.get_operand_lohi() == 1)
            secondHalf.u64 = secondHalf.u64 & 0xFFFF;
       else if(op.get_operand_lohi() == 2)
@@ -198,8 +310,26 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
       firstHalf.u64 = get_reg(op.get_symbol()).u64;
       result.u64 = firstHalf.u64;
       firstHalf.u64 = firstHalf.u64 + op.get_addr_offset();
+
+     if(available_cycle.find(op.get_symbol())!=available_cycle.end())
+                              	{int available_time=available_cycle.find(op.get_symbol())->second;
+                                     if(available_time>interval_issue_cycle)
+
+                                    	 {interval_issue_cycle=available_time;
+                                    	 //thread->print_insn(thread->m_PC,stdout);
+                                    	// printf("pc:%u, available_time,%d\n",thread->m_PC,interval_issue_cycle);
+                                    	 }
+
+                                	}
+     if(pc_dep.find(op.get_symbol())!=pc_dep.end())
+       {unsigned pc=pc_dep.find(op.get_symbol())->second;
+                dependence_pc_list.insert(pc);
+        }
       set_reg(op.get_symbol(),firstHalf);
+
    }
+
+
 
    ptx_reg_t finalResult;
    memory_space *mem = NULL;
@@ -212,6 +342,7 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
        // global memory - g[4], g[$r0]
        mem = thread->get_global_memory();
        type_info_key::type_decode(opType,size,t);
+
        mem->read(result.u32,size/8,&finalResult.u128);
        thread->m_last_effective_address = result.u32;
        thread->m_last_memory_space = global_space;
@@ -249,6 +380,9 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
    } else {
        finalResult = result;
    }
+
+
+
 
    if((op.get_operand_neg() == true)&&(derefFlag)) {
       switch( opType ) {
@@ -292,6 +426,9 @@ ptx_reg_t ptx_thread_info::get_operand_value( const operand_info &op, operand_in
    return finalResult;
 
 }
+
+
+
 
 unsigned get_operand_nbits( const operand_info &op )
 {
@@ -375,6 +512,18 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
         predValue.u64 |= ((overflow & 0x01)<<3);
         predValue.u64 |= ((carry & 0x01)<<2);
 
+        if(available_cycle.find(sym)!=available_cycle.end())
+        available_cycle.find(sym)->second=interval_issue_cycle+pI->static_latency;
+        else
+        available_cycle.insert(std::pair<const symbol*, int>(sym,interval_issue_cycle+pI->static_latency));
+
+        if(pc_dep.find(sym)!=pc_dep.end())
+           pc_dep.find(sym)->second=pI->get_PC();
+        else
+         pc_dep.insert(std::pair<const symbol*, unsigned>(sym,pI->get_PC()));
+
+      //  assert(0);
+
         set_reg(sym,predValue);
     }
     else if (dst.get_double_operand_type() == 0)
@@ -416,7 +565,31 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
           } else {
              setValue2.u32 = (setValue.u64==0)?0xFFFFFFFF:0;
           }
+          if(available_cycle.find(name1)!=available_cycle.end())
+                    {
+                  	  available_cycle.find(name1)->second=interval_issue_cycle+pI->static_latency;
 
+                    }
+                    else
+                  	available_cycle.insert(std::pair<const symbol*, int>(name1,interval_issue_cycle+pI->static_latency));
+
+                    if(available_cycle.find(name2)!=available_cycle.end())
+                              {
+                            	  available_cycle.find(name2)->second=interval_issue_cycle+pI->static_latency;
+
+                              }
+                              else
+           available_cycle.insert(std::pair<const symbol*, int>(name2,interval_issue_cycle+pI->static_latency));
+
+                    if(pc_dep.find(name1)!=pc_dep.end())
+                              pc_dep.find(name1)->second=pI->get_PC();
+                           else
+                            pc_dep.insert(std::pair<const symbol*, unsigned>(name1,pI->get_PC()));
+
+                    if(pc_dep.find(name2)!=pc_dep.end())
+                     pc_dep.find(name2)->second=pI->get_PC();
+                     else
+                     pc_dep.insert(std::pair<const symbol*, unsigned>(name2,pI->get_PC()));
           set_reg(name1,setValue);
           set_reg(name2,setValue2);
       }
@@ -504,7 +677,15 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
           {
               setValue.u64 = ((m_regs.back()[ regName ].u64) & (~(0xFFFF0000))) + ((data.u64<<16) & 0xFFFF0000);
           }
+          if(available_cycle.find(regName)!=available_cycle.end())
+          available_cycle.find(regName)->second=interval_issue_cycle+pI->static_latency;
+          else
+          available_cycle.insert(std::pair<const symbol*, int>(regName,interval_issue_cycle+pI->static_latency));
 
+          if(pc_dep.find(regName)!=pc_dep.end())
+           pc_dep.find(regName)->second=pI->get_PC();
+           else
+           pc_dep.insert(std::pair<const symbol*, unsigned>(regName,pI->get_PC()));
           set_reg(predName,predValue);
           set_reg(regName,setValue);
       }
@@ -528,6 +709,20 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
           name3 = dst.vec_symbol(2);
           name4 = dst.vec_symbol(3);
 
+          for(int i=0;i<4;i++)
+                 {
+                 if(available_cycle.find(dst.vec_symbol(i))!=available_cycle.end())
+                          available_cycle.find(dst.vec_symbol(i))->second=interval_issue_cycle+pI->static_latency;
+                          else
+                          available_cycle.insert(std::pair<const symbol*, int>(dst.vec_symbol(i),interval_issue_cycle+pI->static_latency));
+                 if(pc_dep.find(dst.vec_symbol(i))!=pc_dep.end())
+                   pc_dep.find(dst.vec_symbol(i))->second=pI->get_PC();
+                   else
+                  pc_dep.insert(std::pair<const symbol*, unsigned>(dst.vec_symbol(i),pI->get_PC()));
+
+
+                 }
+
           set_reg(name1,setValue);
           set_reg(name2,setValue2);
           set_reg(name3,setValue3);
@@ -547,7 +742,17 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
 
           name1 = dst.vec_symbol(0);
           name2 = dst.vec_symbol(1);
-
+          for(int i=0;i<2;i++)
+                             {
+                             if(available_cycle.find(dst.vec_symbol(i))!=available_cycle.end())
+                                      available_cycle.find(dst.vec_symbol(i))->second=interval_issue_cycle+pI->static_latency;
+                                      else
+                                      available_cycle.insert(std::pair<const symbol*, int>(dst.vec_symbol(i),interval_issue_cycle+pI->static_latency));
+                             if(pc_dep.find(dst.vec_symbol(i))!=pc_dep.end())
+                             pc_dep.find(dst.vec_symbol(i))->second=pI->get_PC();
+                             else
+                             pc_dep.insert(std::pair<const symbol*, unsigned>(dst.vec_symbol(i),pI->get_PC()));
+                             }
           set_reg(name1,setValue);
           set_reg(name2,setValue2);
       }
@@ -561,6 +766,16 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
           {
               setValue.u64 = ((m_regs.back()[ dst.get_symbol() ].u64) & (~(0xFFFF0000))) + ((data.u64<<16) & 0xFFFF0000);
           }
+          if(available_cycle.find(dst.get_symbol())!=available_cycle.end())
+          available_cycle.find(dst.get_symbol())->second=interval_issue_cycle+pI->static_latency;
+          else
+           available_cycle.insert(std::pair<const symbol*, int>(dst.get_symbol(),interval_issue_cycle+pI->static_latency));
+
+          if(pc_dep.find(dst.get_symbol())!=pc_dep.end())
+           pc_dep.find(dst.get_symbol())->second=pI->get_PC();
+            else
+             pc_dep.insert(std::pair<const symbol*, unsigned>(dst.get_symbol(),pI->get_PC()));
+
           set_reg(dst.get_symbol(),setValue);
       }
    }
@@ -609,7 +824,6 @@ void ptx_thread_info::set_operand_value( const operand_info &dst, const ptx_reg_
 
 
 }
-
 void ptx_thread_info::set_vector_operand_values( const operand_info &dst, 
                                                  const ptx_reg_t &data1, 
                                                  const ptx_reg_t &data2, 
@@ -676,8 +890,10 @@ void abs_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    thread->set_operand_value(dst,d, i_type, thread, pI);
 }
 
-void addp_impl( const ptx_instruction *pI, ptx_thread_info *thread )
+void addp_impl( const ptx_instruction *pI, ptx_thread_info *thread)
 {
+
+
    //PTXPlus add instruction with carry (carry is kept in a predicate) register
    ptx_reg_t src1_data, src2_data, src3_data, data;
    int overflow = 0;
@@ -688,10 +904,16 @@ void addp_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    const operand_info &src2 = pI->src2();
    const operand_info &src3 = pI->src3();
 
+
+
    unsigned i_type = pI->get_type();
    src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
    src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
    src3_data = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+  // printf("Issue cycle: %d",interval_issue_cycle);
+ //  printf("Available_time:%d,%d,%d\n",src1_data.available_time,src2_data.available_time,src3_data.available_time);
+
 
    unsigned rounding_mode = pI->rounding_mode();
    int orig_rm = fegetround();
@@ -746,6 +968,9 @@ void addp_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 
    thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry  );
 }
+
+
+
 
 void add_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
 { 
@@ -2300,6 +2525,9 @@ void ld_exec( const ptx_instruction *pI, ptx_thread_info *thread )
    const operand_info &src1 = pI->src1();
 
    unsigned type = pI->get_type();
+
+
+
 
    ptx_reg_t src1_data = thread->get_operand_value(src1, dst, type, thread, 1);
    ptx_reg_t data;

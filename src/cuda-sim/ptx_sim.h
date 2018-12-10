@@ -140,6 +140,7 @@ union ptx_reg_t {
        unsigned int highest;
    } u128;
    unsigned       pred : 4;
+  // unsigned available_time;
 
 };
 

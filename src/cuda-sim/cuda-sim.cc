@@ -54,12 +54,20 @@ void ** g_inst_classification_stat = NULL;
 void ** g_inst_op_classification_stat= NULL;
 int g_ptx_kernel_count = -1; // used for classification stat collection purposes 
 int g_debug_execution = 0;
+
 int g_debug_thread_uid = 0;
 addr_t g_debug_pc = 0xBEEF1518;
 // Output debug information to file options
-
+std::vector <long> instruction_count;
+int CTA_number;
+int kernel_number;
 unsigned g_ptx_sim_num_insn = 0;
 unsigned gpgpu_param_num_shaders = 0;
+std::map<const symbol*, int> available_cycle;
+std::map<const symbol*, unsigned> pc_dep;
+long interval_issue_cycle;
+std::set <unsigned > dependence_pc_list;
+std::vector<long> issue_cycle;
 
 char *opcode_latency_int, *opcode_latency_fp, *opcode_latency_dp;
 char *opcode_initiation_int, *opcode_initiation_fp, *opcode_initiation_dp;
@@ -620,15 +628,78 @@ void ptx_instruction::set_opcode_and_latency()
 	}
    op = ALU_OP;
    mem_op= NOT_TEX;
-   initiation_interval = latency = 1;
+   static_latency=initiation_interval = latency = 1;
+   /*
+   std::vector<int > ld_pc;
+   std::vector<float> ld_latency;
+   ld_pc.clear();
+   ld_latency.clear();
+   int pc;
+   float latency;
+
+   FILE * AMAT=fopen("pc_latency_info.txt","rb");
+   if(AMAT!=NULL)
+   {
+	   while (fscanf(AMAT, "%d,%f\n", &pc, &latency ) != EOF){
+		  //printf("pc:%d,latency:%f",pc,latency);
+		   ld_pc.push_back(pc);
+		   ld_latency.push_back(latency);
+
+	   }
+   }
+     // else
+	 //  printf("can not open file");
+   fclose(AMAT);
+*/
    switch( m_opcode ) {
    case MOV_OP:
        assert( !(has_memory_read() && has_memory_write()) );
        if ( has_memory_read() ) op = LOAD_OP;
        if ( has_memory_write() ) op = STORE_OP;
        break;
-   case LD_OP: op = LOAD_OP; break;
-   case LDU_OP: op = LOAD_OP; break;
+   case LD_OP:
+	   {op = LOAD_OP;
+	   /*
+	   if(!ld_pc.empty())
+	   {
+        for(int i=0;i<ld_pc.size();i++)
+        { if(this->pc==ld_pc[i])
+        	{static_latency=int(ld_latency[i]);
+        	 break;
+        	}
+         else
+        	static_latency=1;
+
+        }
+       printf("static_latency:%d",static_latency);
+	   }
+	   else
+		  static_latency=1;
+	*/
+	   static_latency=1;
+	   break;
+	   }
+   case LDU_OP:
+	   {op = LOAD_OP;
+  /*
+	   if(!ld_pc.empty())
+	  	   {
+	          for(int i=0;i<ld_pc.size();i++)
+	          { if(this->pc==ld_pc[i])
+	          	{static_latency=int(ld_latency[i]);
+	          	 break;
+	          	}
+	           else
+	          	static_latency=1;
+
+	          }
+	          printf("static_latency:%d",static_latency);
+	  	   }
+	   else static_latency=1;
+*/
+	    static_latency=1;
+	    break;
+	   }
    case ST_OP: op = STORE_OP; break;
    case BRA_OP: op = BRANCH_OP; break;
    case BREAKADDR_OP: op = BRANCH_OP; break;
@@ -658,19 +729,19 @@ void ptx_instruction::set_opcode_and_latency()
 	   switch(get_type()){
 	   case F32_TYPE:
 		   latency = fp_latency[0];
-		   initiation_interval = fp_init[0];
+		   static_latency=initiation_interval = fp_init[0];
 		   break;
 	   case F64_TYPE:
 	   case FF64_TYPE:
 		   latency = dp_latency[0];
-		   initiation_interval = dp_init[0];
+		   static_latency=initiation_interval = dp_init[0];
 		   break;
 	   case B32_TYPE:
 	   case U32_TYPE:
 	   case S32_TYPE:
 	   default: //Use int settings for default
 		   latency = int_latency[0];
-		   initiation_interval = int_init[0];
+		   static_latency=initiation_interval = int_init[0];
 		   break;
 	   }
 	   break;
@@ -679,19 +750,19 @@ void ptx_instruction::set_opcode_and_latency()
 	   switch(get_type()){
 	   case F32_TYPE:
 		   latency = fp_latency[1];
-		   initiation_interval = fp_init[1];
+		   static_latency=initiation_interval = fp_init[1];
 		   break;
 	   case F64_TYPE:
 	   case FF64_TYPE:
 		   latency = dp_latency[1];
-		   initiation_interval = dp_init[1];
+		   static_latency=initiation_interval = dp_init[1];
 		   break;
 	   case B32_TYPE:
 	   case U32_TYPE:
 	   case S32_TYPE:
 	   default: //Use int settings for default
 		   latency = int_latency[1];
-		   initiation_interval = int_init[1];
+		   static_latency=initiation_interval = int_init[1];
 		   break;
 	   }
 	   break;
@@ -700,13 +771,13 @@ void ptx_instruction::set_opcode_and_latency()
 	   switch(get_type()){
 	   case F32_TYPE:
 		   latency = fp_latency[2];
-		   initiation_interval = fp_init[2];
+		   static_latency=initiation_interval = fp_init[2];
 		   op = ALU_SFU_OP;
 		   break;
 	   case F64_TYPE:
 	   case FF64_TYPE:
 		   latency = dp_latency[2];
-		   initiation_interval = dp_init[2];
+		   static_latency=initiation_interval = dp_init[2];
 		   op = ALU_SFU_OP;
 		   break;
 	   case B32_TYPE:
@@ -714,7 +785,7 @@ void ptx_instruction::set_opcode_and_latency()
 	   case S32_TYPE:
 	   default: //Use int settings for default
 		   latency = int_latency[2];
-		   initiation_interval = int_init[2];
+		   static_latency=initiation_interval = int_init[2];
 		   op = SFU_OP;
 		   break;
 	   }
@@ -724,19 +795,19 @@ void ptx_instruction::set_opcode_and_latency()
 	   switch(get_type()){
 	   case F32_TYPE:
 		   latency = fp_latency[3];
-		   initiation_interval = fp_init[3];
+		   static_latency=initiation_interval = fp_init[3];
 		   break;
 	   case F64_TYPE:
 	   case FF64_TYPE:
 		   latency = dp_latency[3];
-		   initiation_interval = dp_init[3];
+		   static_latency=initiation_interval = dp_init[3];
 		   break;
 	   case B32_TYPE:
 	   case U32_TYPE:
 	   case S32_TYPE:
 	   default: //Use int settings for default
 		   latency = int_latency[3];
-		   initiation_interval = int_init[3];
+		   static_latency=initiation_interval = int_init[3];
 		   op = SFU_OP;
 		   break;
 	   }
@@ -747,26 +818,26 @@ void ptx_instruction::set_opcode_and_latency()
 	   switch(get_type()){
 	   case F32_TYPE:
 		   latency = fp_latency[4];
-		   initiation_interval = fp_init[4];
+		   static_latency=initiation_interval = fp_init[4];
 		   break;
 	   case F64_TYPE:
 	   case FF64_TYPE:
 		   latency = dp_latency[4];
-		   initiation_interval = dp_init[4];
+		   static_latency=initiation_interval = dp_init[4];
 		   break;
 	   case B32_TYPE:
 	   case U32_TYPE:
 	   case S32_TYPE:
 	   default: //Use int settings for default
 		   latency = int_latency[4];
-		   initiation_interval = int_init[4];
+		   static_latency=initiation_interval = int_init[4];
 		   break;
 	   }
 	   break;
    case SQRT_OP: case SIN_OP: case COS_OP: case EX2_OP: case LG2_OP: case RSQRT_OP: case RCP_OP:
 	   //Using double to approximate those
 	  latency = dp_latency[2];
-	  initiation_interval = dp_init[2];
+	  static_latency=initiation_interval = dp_init[2];
       op = SFU_OP;
       break;
    default: 
@@ -1737,7 +1808,9 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
 
      //using a shader core object for book keeping, it is not needed but as most function built for performance simulation need it we use it here
     extern gpgpu_sim *g_the_gpu;
-
+    CTA_number=0;
+    instruction_count.resize(100);
+    issue_cycle.resize(100);
     //we excute the kernel one CTA (Block) at the time, as synchronization functions work block wise
     while(!kernel.no_more_ctas_to_run()){
         functionalCoreSim cta(
@@ -1747,7 +1820,9 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
         );
         cta.execute();
     }
-    
+
+
+
    //registering this kernel as done      
    extern stream_manager *g_stream_manager;
    
@@ -1784,7 +1859,14 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
 }
 
 void functionalCoreSim::initializeCTA()
-{
+{   for (int i=0;i<m_warp_count;i++)
+	{instruction_count[i]=0;
+     issue_cycle[i]=0;
+	}
+     available_cycle.clear();
+     pc_dep.clear();
+    //printf("instruction_count:%lld",instruction_count[0]);
+    CTA_number++;
     int ctaLiveThreads=0;
     
     for(int i=0; i< m_warp_count; i++){
@@ -1837,6 +1919,9 @@ void functionalCoreSim::execute()
                  m_warpAtBarrier[i]=false;
         }
     }
+
+
+
  }
 
 void functionalCoreSim::executeWarp(unsigned i, bool &allAtBarrier, bool & someOneLive)
@@ -1845,6 +1930,7 @@ void functionalCoreSim::executeWarp(unsigned i, bool &allAtBarrier, bool & someO
         warp_inst_t inst =getExecuteWarp(i);
         execute_warp_inst_t(inst,i);
         if(inst.isatomic()) inst.do_atomic(true);
+        //if(inst.is_load()||inst.is_store()) inst.generate_mem_accesses();
         if(inst.op==BARRIER_OP || inst.op==MEMORY_BARRIER_OP ) m_warpAtBarrier[i]=true;
         updateSIMTStack( i, &inst );
     }

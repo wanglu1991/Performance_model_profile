@@ -531,6 +531,7 @@ void cache_stats::print_stats(FILE *fout, const char *cache_name) const{
     }
 }
 
+
 void cache_sub_stats::print_port_stats(FILE *fout, const char *cache_name) const
 {
     float data_port_util = 0.0f; 
